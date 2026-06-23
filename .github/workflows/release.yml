@@ -1,0 +1,62 @@
+name: release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "tag/version label for artifact names"
+        required: false
+        default: dev
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Cross-compile binaries
+        env:
+          VERSION: ${{ github.ref_type == 'tag' && github.ref_name || inputs.tag }}
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          targets="linux/amd64 linux/arm64 darwin/amd64 darwin/arm64 windows/amd64 windows/arm64"
+          for t in $targets; do
+            goos="${t%/*}"; goarch="${t#*/}"
+            bin="nostr-nsite-server"
+            [ "$goos" = "windows" ] && bin="nostr-nsite-server.exe"
+            echo "building $goos/$goarch"
+            CGO_ENABLED=0 GOOS="$goos" GOARCH="$goarch" \
+              go build -trimpath -ldflags="-s -w" -o "$bin" .
+            base="nostr-nsite-server_${VERSION}_${goos}_${goarch}"
+            if [ "$goos" = "windows" ]; then
+              zip -q "dist/${base}.zip" "$bin"
+            else
+              tar czf "dist/${base}.tar.gz" "$bin"
+            fi
+            rm -f "$bin"
+          done
+          ( cd dist && sha256sum * > checksums.txt )
+          ls -l dist
+
+      - name: Upload workflow artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: binaries
+          path: dist/*
+
+      - name: Publish to GitHub Release
+        if: github.ref_type == 'tag'
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*
+          generate_release_notes: true
