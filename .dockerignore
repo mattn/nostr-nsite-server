@@ -1,0 +1,6 @@
+nostr-nsite-server
+site/
+*.md
+.git/
+Dockerfile
+.dockerignore
