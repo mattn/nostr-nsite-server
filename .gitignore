@@ -1,2 +1,4 @@
 # compiled binary
 /nostr-nsite-server
+/init.sh
+/site/
