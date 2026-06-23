@@ -2,7 +2,9 @@ package main
 
 import (
 	"context"
+	"embed"
 	"fmt"
+	"io/fs"
 	"log"
 	"net/http"
 	"strings"
@@ -14,6 +16,20 @@ import (
 	"fiatjaf.com/nostr/nipb0/blossom"
 	"github.com/urfave/cli/v3"
 )
+
+// staticFiles holds the default site served at the bare base domain (usage page, etc.).
+//
+//go:embed static
+var staticFiles embed.FS
+
+// staticHandler serves the embedded static/ directory (index.html at "/").
+var staticHandler = func() http.Handler {
+	sub, err := fs.Sub(staticFiles, "static")
+	if err != nil {
+		panic(err)
+	}
+	return http.FileServer(http.FS(sub))
+}()
 
 var gatewayCmd = &cli.Command{
 	Name:  "gateway",
@@ -72,6 +88,12 @@ func (g *gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		host = host[:i]
 	}
 	host = strings.ToLower(host)
+
+	// the bare base domain serves the embedded default site (usage page).
+	if host == g.baseDomain {
+		staticHandler.ServeHTTP(w, r)
+		return
+	}
 
 	// strip the base domain to isolate the leading <npub> label.
 	label, ok := strings.CutSuffix(host, "."+g.baseDomain)
