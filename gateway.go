@@ -109,6 +109,7 @@ func (g *gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	// the bare base domain serves the embedded default site (usage page).
 	if host == g.baseDomain {
+		setSecurityHeaders(w.Header())
 		staticHandler.ServeHTTP(w, r)
 		return
 	}

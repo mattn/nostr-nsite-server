@@ -117,6 +117,8 @@ func (s *server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", ct)
 	}
 	w.Header().Set("Cache-Control", "public, max-age=300")
+
+	setSecurityHeaders(w.Header())
 	w.WriteHeader(http.StatusOK)
 	if r.Method != http.MethodHead {
 		w.Write(data)
@@ -178,6 +180,36 @@ func (s *server) download(ctx context.Context, mnf *nip5a.SiteManifest, hash [32
 		return data, nil
 	}
 	return nil, lastErr
+}
+
+// setSecurityHeaders hardens responses that carry untrusted, user-published
+// content served on per-npub subdomains of a shared parent domain. The
+// Same-Origin Policy already stops one tenant from reading another's DOM or
+// fetch() responses (we never emit CORS headers); these headers close the
+// remaining cross-tenant gaps without restricting a site's own resources.
+//
+// NOTE: none of these stop a tenant's JS from setting a parent-domain cookie
+// (document.cookie with Domain=.compile-error.net), which the browser allows
+// because the parent is not a public suffix. The only real fix for cookie
+// isolation across tenants — and for protecting other services on the parent
+// domain — is registering the base domain on the Public Suffix List.
+func setSecurityHeaders(h http.Header) {
+	// don't let the browser reinterpret a blob as a more dangerous type than
+	// the manifest path implies.
+	h.Set("X-Content-Type-Options", "nosniff")
+	// request an origin-keyed agent cluster, disabling the legacy
+	// document.domain cross-subdomain escape hatch.
+	h.Set("Origin-Agent-Cluster", "?1")
+	// clickjacking: only allow this page to be framed by its own origin, so one
+	// tenant cannot frame and bait clicks on another's. frame-ancestors is the
+	// modern form; X-Frame-Options covers older browsers.
+	h.Set("Content-Security-Policy", "frame-ancestors 'self'")
+	h.Set("X-Frame-Options", "SAMEORIGIN")
+	// sever the window.opener relationship across origins (tabnabbing, cross
+	// browsing-context-group references).
+	h.Set("Cross-Origin-Opener-Policy", "same-origin")
+	// never leak the full path of one tenant's page to a different origin.
+	h.Set("Referrer-Policy", "strict-origin-when-cross-origin")
 }
 
 func contentType(p string, data []byte) string {
