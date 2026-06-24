@@ -32,6 +32,20 @@ Requests to the bare base domain return a built-in landing page (embedded from
 `static/`). Point a wildcard DNS record `*.nsite.example.com` and a wildcard TLS
 certificate at the server.
 
+To give sites friendly names, pass `-config config.json` mapping subdomain labels
+to npubs:
+
+```json
+{
+  "mappings": {
+    "mattn": "npub1..."
+  }
+}
+```
+
+With this, the site is also reachable at `mattn.nsite.example.com`. A label that
+has no mapping still falls back to being decoded as an npub.
+
 ### Publish a site
 
 ```

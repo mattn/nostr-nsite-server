@@ -50,6 +50,10 @@ var gatewayCmd = &cli.Command{
 			Usage: "address to listen on",
 			Value: ":8080",
 		},
+		&cli.StringFlag{
+			Name:  "config",
+			Usage: "path to a JSON config mapping subdomain labels to npubs",
+		},
 	},
 	Action: func(ctx context.Context, c *cli.Command) error {
 		relays := c.StringSlice("relay")
@@ -57,11 +61,21 @@ var gatewayCmd = &cli.Command{
 			return fmt.Errorf("no relays given")
 		}
 
+		var mappings map[string]nostr.PubKey
+		if path := c.String("config"); path != "" {
+			var err error
+			if mappings, err = loadConfig(path); err != nil {
+				return fmt.Errorf("loading config: %w", err)
+			}
+			log.Printf("loaded %d subdomain mapping(s) from %s", len(mappings), path)
+		}
+
 		gw := &gateway{
 			baseDomain: strings.ToLower(strings.TrimPrefix(c.String("base-domain"), ".")),
 			relays:     relays,
 			pool:       nostr.NewPool(),
 			sites:      map[nostr.PubKey]*server{},
+			mappings:   mappings,
 		}
 
 		addr := c.String("addr")
@@ -77,6 +91,10 @@ type gateway struct {
 	baseDomain string
 	relays     []string
 	pool       *nostr.Pool
+
+	// mappings resolves friendly subdomain labels (e.g. "mattn") to a pubkey,
+	// loaded from the config file. nil when no config was given.
+	mappings map[string]nostr.PubKey
 
 	mu    sync.Mutex
 	sites map[nostr.PubKey]*server
@@ -102,12 +120,17 @@ func (g *gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	prefix, value, err := nip19.Decode(label)
-	if err != nil || prefix != "npub" {
-		http.Error(w, "host is not a valid npub", http.StatusNotFound)
-		return
+	// a configured mapping (e.g. "mattn") takes precedence; otherwise the label
+	// itself must be a valid npub.
+	pk, ok := g.mappings[label]
+	if !ok {
+		prefix, value, err := nip19.Decode(label)
+		if err != nil || prefix != "npub" {
+			http.Error(w, "host is not a known name or valid npub", http.StatusNotFound)
+			return
+		}
+		pk = value.(nostr.PubKey)
 	}
-	pk := value.(nostr.PubKey)
 
 	g.siteFor(pk).ServeHTTP(w, r)
 }
