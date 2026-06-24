@@ -18,8 +18,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: docker/setup-qemu-action@v3
-
+      # no QEMU: the Dockerfile cross-compiles natively (GOARCH), so we only
+      # need buildx to assemble the multi-arch image.
       - uses: docker/setup-buildx-action@v3
 
       - name: Log in to GHCR
